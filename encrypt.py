@@ -86,6 +86,18 @@ def main(
     #     file_plaintext = FilePlaintext(file_content=file_content, metadata={"filename": file_path.name})
     #     file_plaintexts.append(file_plaintext)
     taco_domain = domains.get_domain(domain)
+
+    # TODO: generate a keypair instead
+    #  encrypt the "hidden" key (commonly called "private" key)
+    #  participants will then use the "shared" key (commonly called "public" key)
+    #  The participants will be able to encrypt data with the shared key.
+    #  The reveal of the hidden key will allow anyone to decrypt that data once the condition is met.
+    #  I chose to _not_ use the public key of the ritual because I want to have the data decryption
+    #  to be permissionless indefinitely. (e.g. the nodes/network could disappear)
+    #  Use case examples:
+    #    * shuttered voting
+    #    * NFT where participants select their own attributes, which would get encrypted with the shared key
+    #      - nobody would know rarity etc until the reveal
     plaintext_of_sym_key = keygen()
 
     secret_hash = keccak(plaintext_of_sym_key)
