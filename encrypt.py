@@ -2,14 +2,18 @@ import json
 from pathlib import Path
 
 import click
+import nucypher.blockchain.eth.domains
 from cryptography.fernet import Fernet
 from eth_utils import keccak  # type: ignore
+from nucypher.blockchain.eth import domains
 from nucypher.blockchain.eth.agents import CoordinatorAgent
-from nucypher.blockchain.eth.registry import InMemoryContractRegistry
+from nucypher.blockchain.eth.registry import ContractRegistry
+from nucypher.blockchain.eth.signers import InMemorySigner
 from nucypher.characters.lawful import Enrico
 from revealer.conditions import is_material_released_condition
 from nucypher.utilities.logging import GlobalLoggerSettings
 from nucypher_core.ferveo import DkgPublicKey
+from tests.constants import DEFAULT_TEST_ENRICO_PRIVATE_KEY
 
 from revealer_bot.tmk import TMK, FilePlaintext, decrypt, encapsulate
 
@@ -38,31 +42,35 @@ def keygen() -> bytes:
     "--spill-secret-hazmat-hazmat-i-know-what-i-am-doing",
     is_flag=True,
     help="Spill the secret to stdout",
+    default=False
 )
 @click.option(
     "--ritual-id",
     type=int,
     help="Ritual ID obtained from a side channel",
+    default=5
 )
-@click.option("--coordinator-provider-uri", type=str, help="URI of the coordinator provider", required=True)
 @click.option(
-    "--coordinator-network",
-    default="mumbai",
-    help="Network for the coordinator",
-    show_default=True,
-    type=click.Choice(["mumbai", "tapir", "polygon", "lynx"]),
+    "--polygon-provider-uri",
+    type=str, help="URI of the polygon provider",
+    default="https://polygon-mumbai.infura.io/v3/a11313ddcf61443898b6a47e952d255c"
 )
-@click.option("--output-dir", type=str, required=False, help="Output file for encrypted data")
+@click.option(
+    "--domain",
+    default=domains.LYNX.name,
+    help="Domain for the coordinator",
+    show_default=True,
+    type=click.Choice(list(domains.SUPPORTED_DOMAINS.keys())),
+)
+@click.option("--output-dir", type=str, required=False, help="Output file for encrypted data", default="")
 def main(
     input_dir: str,
     ritual_id: int,
-    coordinator_provider_uri: str,
-    coordinator_network: str,
+    polygon_provider_uri: str,
+    domain: str,
     output_dir: str,
     spill_secret_hazmat_hazmat_i_know_what_i_am_doing: bool,
 ):
-    return
-def main():
     # if output_dir is None:
     #     output_dir = input_dir
     #
@@ -77,9 +85,7 @@ def main():
     #
     #     file_plaintext = FilePlaintext(file_content=file_content, metadata={"filename": file_path.name})
     #     file_plaintexts.append(file_plaintext)
-    ritual_id = 91
-    coordinator_provider_uri = "https://polygon-mumbai.infura.io/v3/a11313ddcf61443898b6a47e952d255c"
-    coordinator_network = "mumbai"
+    taco_domain = domains.get_domain(domain)
     plaintext_of_sym_key = keygen()
 
     secret_hash = keccak(plaintext_of_sym_key)
@@ -87,11 +93,12 @@ def main():
     print("--------- Threshold Encryption ---------")
 
     coordinator_agent = CoordinatorAgent(
-        provider_uri=coordinator_provider_uri,
-        registry=InMemoryContractRegistry.from_latest_publication(network=coordinator_network),
+        blockchain_endpoint=polygon_provider_uri,
+        registry=ContractRegistry.from_latest_publication(domain=taco_domain)
     )
     ritual = coordinator_agent.get_ritual(ritual_id)
-    enrico = Enrico(encrypting_key=DkgPublicKey.from_bytes(bytes(ritual.public_key)))
+    signer = InMemorySigner(private_key=DEFAULT_TEST_ENRICO_PRIVATE_KEY)
+    enrico = Enrico(encrypting_key=DkgPublicKey.from_bytes(bytes(ritual.public_key)), signer=signer)
 
     print(
         f"Fetched DKG public key {bytes(enrico.policy_pubkey).hex()} "  # type: ignore
@@ -130,7 +137,9 @@ def main():
         ################
 
         hopefully_tmk = TMK.from_bytes(data)
-        hopefully_cleartext = decrypt(ciphertext=hopefully_tmk.bulk_ciphertext, plaintext_of_symkey=plaintext_of_sym_key)
+        hopefully_cleartext = decrypt(
+            ciphertext=hopefully_tmk.bulk_ciphertext, plaintext_of_symkey=plaintext_of_sym_key
+        )
         hopefully_payload = FilePlaintext.from_bytes(hopefully_cleartext)
         assert hopefully_payload.metadata["filename"] == filename_to_encrypt
         assert hopefully_payload.file_content == plaintext.file_content
